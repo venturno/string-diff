@@ -36,7 +36,13 @@ mix(s1, s2) --> "=:aaaaaa/2:eeeee/=:fffff/1:rr/2:tt/=:hh"
 
 #+BEGIN_SRC clojure :tangle project.clj
   (defproject string-diff "0.1.0-SNAPSHOT"
-    :dependencies [[org.clojure/clojure "1.8.0"]]
+    :main string-diff.server
+    :dependencies [[org.clojure/clojure "1.8.0"]
+                   [bidi "2.0.9"]
+                   [liberator "0.14.1"] 
+                   [ring "1.4.0"]
+                   [ring/ring-jetty-adapter "1.4.0"]
+                   [ring/ring-json "0.4.0"]]
     :profiles {:dev {:dependencies [[midje "1.8.3"]]
                      :plugins [[lein-midje "3.2"]]}})
 #+END_SRC
@@ -88,7 +94,8 @@ mix(s1, s2) --> "=:aaaaaa/2:eeeee/=:fffff/1:rr/2:tt/=:hh"
 
 *** Code
 #+BEGIN_SRC clojure :tangle src/string_diff/diffs.clj
-  (ns string-diff.diffs)
+  (ns string-diff.diffs
+    (:require [clojure.set :refer [intersection]]))
 
   (defn add-entry
     "Add a key + total count to a map"
@@ -120,7 +127,7 @@ mix(s1, s2) --> "=:aaaaaa/2:eeeee/=:fffff/1:rr/2:tt/=:hh"
     "Creates a map from a string with the unique elements as keys and totals as values
     Only returns unique lowercase characters from the string"
     [str]
-    (let [present-lowercase-chars (-> str set (clojure.set/intersection lowercase-chars))]
+    (let [present-lowercase-chars (-> str set (intersection lowercase-chars))]
       (select-keys (count-uniq str) present-lowercase-chars)))
 
   (defn frequent
@@ -184,4 +191,46 @@ mix(s1, s2) --> "=:aaaaaa/2:eeeee/=:fffff/1:rr/2:tt/=:hh"
            diffs
            emit)))
 #+END_SRC
- 
+
+** Rest API
+*** DONE Code
+CLOSED: [2016-07-03 Sun 19:13]
+#+BEGIN_SRC clojure :tangle src/string_diff/server.clj
+  (ns string-diff.server
+    (:require [string-diff.diffs :refer [unique-and-frequent diffs]]
+              [bidi.ring :refer (make-handler)]
+              [ring.middleware.json :refer [wrap-json-body wrap-json-response]]
+              [liberator.core :refer [defresource]]
+              [liberator.representation :refer [as-response]]
+              [ring.adapter.jetty :refer (run-jetty)]))
+
+  (declare mix)
+
+  (defresource mix
+    {:allowed-methods [:post]
+     :available-media-types ["application/json"]
+     :malformed? (fn [ctx]
+                   (let [strings (get-in ctx [:request :body])]
+                     (some (complement string?) strings)))
+     :post! (fn [ctx]
+              (let [strings (get-in ctx [:request :body])]
+                (assoc ctx :diffs (-> (map unique-and-frequent strings) diffs))))
+     ;; doesn't mean we are creating a resource,
+     ;; in this context it means handle 201 response (a correct post)
+     :handle-created (fn [ctx]
+                       ;;convert characters in diffs to strings
+                       ;;to generate a JSON response without problems
+                       {:diffs (map (fn [[k c v]] [k (str c) v]) (:diffs ctx))})})
+
+  (def routes
+    ["/" {"mix" mix}])
+
+  (def app
+    (-> routes
+        make-handler
+        wrap-json-body
+        wrap-json-response))
+
+  (defn -main [& args]
+    (run-jetty #'app {:port 3000 :join? false}))
+#+END_SRC
