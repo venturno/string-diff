@@ -40,12 +40,14 @@
 
 (def unique-and-frequent (comp frequent unique-lowercase-chars))
 
-(defn diffs [seq-diffs]
+(defn diffs [char-maps]
+  "given a sequence of unique char occurrences maps, yield the differences
+between them in a vector of elements [string character frequency]"
   (loop [diffs (list)
-         [k & ks] (-> (map keys seq-diffs) flatten distinct)]
+         [k & ks] (-> (map keys char-maps) flatten distinct)]
     (if-not k
       diffs
-      (let [vals (mapv #(get % k) seq-diffs)
+      (let [vals (mapv #(get % k) char-maps)
             indexes-of (fn [e coll] (keep-indexed #(if (= e %2) %1) coll))
             diff-idxs (->> vals (indexes-of (reduce (fnil max 0 0) vals)))
             diff-symbol (if (apply = vals)
@@ -68,18 +70,24 @@
         alphabetic-order)
       time-priority)))
 
+(defn visual-diffs [diff-vec]
+  "from a vector of [string char frequency] elements, create a new vector of
+['string:char repeated x times'] elements"
+  (loop [visual-diffs []
+         [[str-key char times] & diffs] (sort prioritized-diff? diff-vec)]
+    (if-not char
+      visual-diffs
+      (let [repeated-char (->> (repeat times char) (apply str))]
+        (recur (conj visual-diffs (str str-key ":" repeated-char)) diffs)))))
+
 (defn emit
+  "create a string of differences, separated by /"
   [diff-vec]
-  (->> (loop [visual-diffs []
-              [[str-key char times] & diffs] (sort prioritized-diff? diff-vec)]
-         (if-not char
-           visual-diffs
-           (let [repeated-char (->> (repeat times char) (apply str))]
-             (recur (conj visual-diffs (str str-key ":" repeated-char)) diffs))))
+  (->> (visual-diffs diff-vec)
        (clojure.string/join "/")))
 
 (defn mix
-  "Given two strings, yield a single string that represents visual differences"
+  "Given one or more strings, yield a single string that represents visual differences"
   [& strings]
   (when strings
     (->> (map unique-and-frequent strings)

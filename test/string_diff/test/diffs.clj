@@ -19,7 +19,7 @@
                                                         \i 2 \n 5 \r 2
                                                         \s 2 \y 3})
 
-(fact "given two strings, diffs yields a vector representation of differences"
+(fact "given a sequence of unique frequent char occurrences, diffs yields a vector representation of differences between them"
       (diffs (map unique-and-frequent (-> examples first vals))) =>
       (just '(["2" \r 2] ["2" \n 5] ["2" \m 3]
               ["2" \i 2] ["2" \f 2] ["2" \d 2]
