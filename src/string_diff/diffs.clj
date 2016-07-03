@@ -1,4 +1,5 @@
-(ns string-diff.diffs)
+(ns string-diff.diffs
+  (:require [clojure.set :refer [intersection]]))
 
 (defn add-entry
   "Add a key + total count to a map"
@@ -30,7 +31,7 @@
   "Creates a map from a string with the unique elements as keys and totals as values
   Only returns unique lowercase characters from the string"
   [str]
-  (let [present-lowercase-chars (-> str set (clojure.set/intersection lowercase-chars))]
+  (let [present-lowercase-chars (-> str set (intersection lowercase-chars))]
     (select-keys (count-uniq str) present-lowercase-chars)))
 
 (defn frequent
