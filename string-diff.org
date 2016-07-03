@@ -1,0 +1,179 @@
+#+TITLE: String differences
+#+AUTHOR: Samuel Falcon
+#+EMAIL: samuel.falcon.fdez@gmail.com
+#+PROPERTY: mkdirp yes
+
+* Introduction
+A literate-programming exercise in clojure.
+** Description of the problem to solve
+Given two strings s1 and s2, visualize how different the two strings are. 
+Only taking into account the lowercase letters (a to z). 
+First let us count the frequency of each lowercase letters in s1 and s2.
+
+Need to produce a string in which each lowercase letter of s1 and s2
+appears as many times as it maximum when it is greater than 1; 
+these letters will be prefixed by the number of the string where they appear with 
+their maximum value and :. If the maximum is in s1 as well as in s2 the prefix is =:.
+
+In the result, substrings will be in decreasing order of their length and when they have
+the same length sorted alphabetically; the different groups will be separated by '/'.
+
+Examples (these will be used as test data):
+s1 = "my&friend&Paul has heavy hats! &"
+s2 = "my friend John has many many friends &"
+mix(s1, s2) --> "2:nnnnn/1:aaaa/1:hhh/2:mmm/2:yyy/2:dd/2:ff/2:ii/2:rr/=:ee/=:ss"
+
+s1 = "mmmmm m nnnnn y&friend&Paul has heavy hats! &"
+s2 = "my frie n d Joh n has ma n y ma n y frie n ds n&"
+mix(s1, s2) --> "1:mmmmmm/=:nnnnnn/1:aaaa/1:hhh/2:yyy/2:dd/2:ff/2:ii/2:rr/=:ee/=:ss"
+
+s1="Are the kids at home? aaaaa fffff"
+s2="Yes they are here! aaaaa fffff"
+mix(s1, s2) --> "=:aaaaaa/2:eeeee/=:fffff/1:rr/2:tt/=:hh"
+
+* Project meta
+** Main configuration
+
+#+BEGIN_SRC clojure :tangle project.clj
+  (defproject string-diff "0.1.0-SNAPSHOT"
+    :dependencies [[org.clojure/clojure "1.8.0"]]
+    :profiles {:dev {:dependencies [[midje "1.8.3"]]
+                     :plugins [[lein-midje "3.2"]]}})
+#+END_SRC
+
+* Tests and code
+** String differences 
+*** Tests
+ #+BEGIN_SRC clojure :tangle test/string_diff/test/diffs.clj
+   (ns test.string-diff.diffs
+     (:use [midje.sweet]
+           [string-diff.diffs]))
+
+   (def examples [{:s1 "my&friend&Paul has heavy hats! &!"
+                   :s2 "my friend John has many many friends &"}
+                  {:s1 "mmmmm m nnnnn y&friend&Paul has heavy hats! &"
+                   :s2 "my frie n d Joh n has ma n y ma n y frie n ds n&"}
+                  {:s1 "Are the kids at home? aaaaa fffff"
+                   :s2 "Yes they are here! aaaaa fffff"}])
+
+
+   (fact "can identify in a map the ocurrences of unique lowercase characters in a string that appear more than once"
+         (unique-and-frequent (-> examples first :s1)) => {\a 4 \h 3
+                                                           \e 2 \s 2
+                                                           \y 2}
+         (unique-and-frequent (-> examples first :s2)) => {\m 3 \a 3 \d 2
+                                                           \e 2 \f 2 \h 2
+                                                           \i 2 \n 5 \r 2
+                                                           \s 2 \y 3})
+
+   (fact "given two strings, diffs yields a vector representation of differences"
+         (diffs (map unique-and-frequent (-> examples first vals))) =>
+         (just '(["2" \r 2] ["2" \n 5] ["2" \m 3]
+                 ["2" \i 2] ["2" \f 2] ["2" \d 2]
+                 ["2" \y 3] ["=" \s 2] ["1" \h 3]
+                 ["=" \e 2] ["1" \a 4]) :in-any-order))
+
+   (fact "can mix two or more strings, and can emit a representation string of differences"
+         (apply mix (-> examples (nth 0) vals)) =>
+         "2:nnnnn/1:aaaa/1:hhh/2:mmm/2:yyy/2:dd/2:ff/2:ii/2:rr/=:ee/=:ss"
+         (apply mix (-> examples (nth 1) vals)) =>
+         "1:mmmmmm/=:nnnnnn/1:aaaa/1:hhh/2:yyy/2:dd/2:ff/2:ii/2:rr/=:ee/=:ss"
+         (apply mix (-> examples (nth 2) vals)) =>
+         "=:aaaaaa/2:eeeee/=:fffff/2:rr/1:tt/=:hh"
+         (mix "Liffe is good" "Liffe is very good" "Life is so good") =>
+         "3:ooo/2:ee/1,2:ff/3:ss/=:ii")
+
+ #+END_SRC
+
+
+*** Code
+#+BEGIN_SRC clojure :tangle src/string_diff/diffs.clj
+  (ns string-diff.diffs)
+
+  (defn add-entry
+    "Add a key + total count to a map"
+    [hmap k]
+    (let [cnt (or (get hmap k) 0)]
+      (assoc hmap k (inc cnt))))
+
+  (defn count-uniq
+    "Create a map that represents with each entry how may times an element occurs in a given
+    sequence (key->elem & value->count)"
+    [seq]
+    (loop [uniq {}
+           [x & rest] seq]
+      (if (nil? x)
+        uniq
+        (recur (add-entry uniq x) rest))))
+
+  (defn select-vals-where
+    "Select hash-map entries where value matches a predicate"
+    [pred hmap]
+    (->> hmap
+         (filter (fn [[k v]] (pred v)))
+         (into {})))
+
+  (def lowercase-chars (->> (range (int \a) (inc (int \z)))
+                            (map char) set))
+
+  (defn unique-lowercase-chars
+    "Creates a map from a string with the unique elements as keys and totals as values
+    Only returns unique lowercase characters from the string"
+    [str]
+    (let [present-lowercase-chars (-> str set (clojure.set/intersection lowercase-chars))]
+      (select-keys (count-uniq str) present-lowercase-chars)))
+
+  (defn frequent
+    "Select hash-map entries where the value is greater than 1"
+    [hmap]
+    (select-vals-where #(> % 1) hmap))
+
+  (def unique-and-frequent (comp frequent unique-lowercase-chars))
+
+  (defn diffs [seq-diffs]
+    (loop [diffs (list)
+           [k & ks] (-> (map keys seq-diffs) flatten distinct)]
+      (if-not k
+        diffs
+        (let [vals (mapv #(get % k) seq-diffs)
+              indexes-of (fn [e coll] (keep-indexed #(if (= e %2) %1) coll))
+              diff-idxs (->> vals (indexes-of (reduce (fnil max 0 0) vals)))
+              diff-symbol (if (apply = vals)
+                            "="
+                            (clojure.string/join "," (map inc diff-idxs)))
+              diff-val (nth vals (first diff-idxs))]
+          (recur (conj diffs [diff-symbol k diff-val]) ks)))))
+
+  (defn prioritized-diff?
+    "Returns whether diff1 should be printed before diff2"
+    [[sym1 ch1 times1] [sym2 ch2 times2]]
+    (let [equal (= sym1 "=")
+          both-equal (and equal (= sym2 "="))
+          same-times (= times1 times2)
+          time-priority (> times1 times2)
+          alphabetic-order (< (int ch1) (int ch2))]
+      (if same-times
+        (if (and equal (not both-equal)) ;;if only sym1 is "=", diff2 is prioritized
+          false
+          alphabetic-order)
+        time-priority)))
+
+  (defn emit
+    [diff-vec]
+    (->> (loop [visual-diffs []
+                [[str-key char times] & diffs] (sort prioritized-diff? diff-vec)]
+           (if-not char
+             visual-diffs
+             (let [repeated-char (->> (repeat times char) (apply str))]
+               (recur (conj visual-diffs (str str-key ":" repeated-char)) diffs))))
+         (clojure.string/join "/")))
+
+  (defn mix
+    "Given two strings, yield a single string that represents visual differences"
+    [& strings]
+    (when strings
+      (->> (map unique-and-frequent strings)
+           diffs
+           emit)))
+#+END_SRC
+ 
